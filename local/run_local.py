@@ -146,17 +146,11 @@ def load_config(path):
     invalid JSON escapes; they are auto-escaped here so the file still works.
     """
     text = Path(path).read_text(encoding="utf-8")
+    fixed = re.sub(r'"(?:[^"\\]|\\.)*"', lambda m: m.group(0).replace("\\", "/"), text)
     try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        fixed = re.sub(r'\\(?!["\\/bfnrtu])', r"\\\\", text)
-        try:
-            data = json.loads(fixed)
-        except json.JSONDecodeError as e:
-            die("invalid config JSON in %s: %s" % (path, e))
-        print("[!] %s uses Windows backslashes - auto-fixed. "
-              "Tip: prefer forward slashes, e.g. \"D:/Games/game.apk\"" % path)
-        return data
+        return json.loads(fixed)
+    except json.JSONDecodeError as e:
+        die("invalid config JSON in %s: %s" % (path, e))
 
 
 def main():
