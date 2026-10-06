@@ -1,0 +1,8 @@
+# main patcher (patch_apk_jp.py) needs nothing beyond the stdlib.
+# The masterdata/ and assetbundles/ helper scripts need:
+pycryptodome
+protobuf
+msgpack
+lz4
+# Optional but recommended: disables Unity Connect/Analytics baked settings (external requests)
+UnityPy

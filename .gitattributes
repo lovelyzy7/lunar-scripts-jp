@@ -1,0 +1,15 @@
+# 统一换行符：仓库内文本文件一律 LF（Colab/Linux/venv 直接可用）
+# 仅 Windows 批处理保留 CRLF，二进制文件不做转换
+* text=auto eol=lf
+*.bat text eol=crlf
+*.apk binary
+*.jar binary
+*.keystore binary
+*.jks binary
+*.so binary
+*.bin binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.mp4 binary
