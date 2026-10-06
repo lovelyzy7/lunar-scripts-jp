@@ -35,7 +35,7 @@ lunar-scripts-jp/
 │   └─ patch_apk_jp.py          # 唯一入口：解包→补丁→重建→对齐→签名（或分步）
 ├─ assetbundles/                # 与上游一致：list.bin 处理、assetbundle 加解密
 ├─ masterdata/                  # 与上游一致：patch_masterdata.py、dump/extract 等
-├─ tools/
+├─ (frida 诊断工具已移出仓库 → jp/tools-jp-frida/)
 │   └─ frida_net2.js/.py        # 网络诊断（域名解析 / connect 目标）
 └─ docs/
     ├─ JP私服搭建记录.md

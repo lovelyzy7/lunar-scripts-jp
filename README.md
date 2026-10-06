@@ -14,7 +14,7 @@
 | `android/patch_apk_jp.py` | 主补丁脚本（解包目录 → 已补丁） |
 | `assetbundles/` | asset bundle 解密/加密、`list.bin` 处理（与上游一致） |
 | `masterdata/` | 主数据提取 / 打补丁 / 导出（与上游一致） |
-| `tools/frida_net2.js` / `.py` | Frida 网络诊断（抓域名解析与 connect 目标） |
+| ~~`tools/`~~ | **Frida 诊断脚本已移出仓库** → `jp/tools-jp-frida/`（仅排查用，构建/游玩不需要） |
 | `docs/` | 搭建记录、更新方案 |
 
 ## 环境要求

@@ -1,6 +1,6 @@
 # JP RVA 记录（mod menu 素材，仅记录不制作）
 
-> 由 `tools/gen_rva_records.py` 自动生成：EN dump ↔ JP dump 方法名对照。
+> 由 `tools-jp-frida/gen_rva_records.py`（已移出仓库，位于 jp/tools-jp-frida/） 自动生成：EN dump ↔ JP dump 方法名对照。
 > EN = NieR Re[in]carnation 3.7.1（west），JP = 同版本日服构建。
 > JP dump: `jp/dump-jp-3.7.1/out/dump.cs`（Il2CppDumper）。
 
