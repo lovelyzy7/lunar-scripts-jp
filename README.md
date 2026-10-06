@@ -114,7 +114,7 @@ python android/build_apk.py unpack <原始.apk> work/jp-final
 python android/build_apk.py build  work/jp-final out/JP-modded.apk
 ```
 
-需要 java（JDK 11+）。。产物签名后可直接安装。
+需要 java（JDK 11+）。产物签名后可直接安装。
 
 ## 一键脚本（本地）
 

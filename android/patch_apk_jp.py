@@ -46,6 +46,25 @@ import re
 import struct
 import sys
 
+
+def _enable_utf8_stdio() -> None:
+    """Force UTF-8 stdout/stderr on Windows to avoid console/log mojibake.
+
+    Windows text-mode streams default to the legacy ANSI/OEM code page
+    (e.g. cp936).  Redirected logs then contain non-UTF-8 bytes, and Chinese
+    output raises UnicodeEncodeError on non-CJK systems.  Reconfiguring the
+    wrapper is a no-op on POSIX and safe on the Windows console (its buffer
+    natively accepts UTF-8).
+    """
+    if sys.platform != "win32":
+        return
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
+
 # ---------------------------------------------------------------------------
 # global-metadata.dat string literal patching
 # ---------------------------------------------------------------------------
@@ -1029,6 +1048,8 @@ def patch_libil2cpp(so_path: str) -> int:
 
 
 def main():
+    _enable_utf8_stdio()
+
     p = argparse.ArgumentParser(description="Patch decompiled APK for private server")
     p.add_argument("apk_dir", help="Path to apktool-decompiled APK directory")
     p.add_argument(

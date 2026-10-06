@@ -24,6 +24,17 @@ APKTOOL = TOOLS / "apktool.jar"
 SIGNER = TOOLS / "uber-apk-signer.jar"
 
 
+def _enable_utf8_stdio():
+    """Force UTF-8 stdout/stderr on Windows to avoid console/log mojibake."""
+    if sys.platform != "win32":
+        return
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
+
 def run(cmd):
     print("+", " ".join(str(c) for c in cmd), flush=True)
     subprocess.run([str(c) for c in cmd], check=True)
@@ -80,6 +91,7 @@ def build(src, out):
 
 
 def main():
+    _enable_utf8_stdio()
     a = sys.argv[1:]
     if a and a[0] == "tools":
         tools()

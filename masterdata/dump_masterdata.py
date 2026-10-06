@@ -45,7 +45,7 @@ def load_schemas():
 
     Returns dict: snake_case_name -> (class_name, [(key_idx, type_str, field_name)])
     """
-    with open(SCHEMAS_PATH) as f:
+    with open(SCHEMAS_PATH, encoding="utf-8") as f:
         raw = json.load(f)
     schema = {}
     for snake, entry in raw.items():
@@ -193,7 +193,7 @@ def main():
                 fallback += 1
 
             filepath = os.path.join(args.output, filename)
-            with open(filepath, "w") as f:
+            with open(filepath, "w", encoding="utf-8") as f:
                 json.dump(dicts, f, indent=2, ensure_ascii=False)
                 f.write("\n")
 
