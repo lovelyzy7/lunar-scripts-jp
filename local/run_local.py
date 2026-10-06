@@ -21,6 +21,7 @@ Overrides (also settable in local/config.json):
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -138,6 +139,26 @@ def step_build(py, args):
 
 # ----------------------------------------------------------------- main
 
+def load_config(path):
+    """Read config.json tolerantly.
+
+    Windows paths written with single backslashes ("D:\\Games\\x.apk") are
+    invalid JSON escapes; they are auto-escaped here so the file still works.
+    """
+    text = Path(path).read_text(encoding="utf-8")
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        fixed = re.sub(r'\\(?!["\\/bfnrtu])', r"\\\\", text)
+        try:
+            data = json.loads(fixed)
+        except json.JSONDecodeError as e:
+            die("invalid config JSON in %s: %s" % (path, e))
+        print("[!] %s uses Windows backslashes - auto-fixed. "
+              "Tip: prefer forward slashes, e.g. \"D:/Games/game.apk\"" % path)
+        return data
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -157,7 +178,7 @@ def main():
     cfg = dict(DEFAULTS)
     cfg_path = Path(a.config)
     if cfg_path.exists():
-        cfg.update(json.loads(cfg_path.read_text(encoding="utf-8")))
+        cfg.update(load_config(cfg_path))
     else:
         example = cfg_path.parent / "config.example.json"
         if example.exists():
@@ -213,4 +234,13 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n[x] interrupted", flush=True)
+        sys.exit(130)
+    except SystemExit:
+        raise
+    except Exception as exc:  # keep the console output clean on Windows
+        print("[x] %s: %s" % (type(exc).__name__, exc), flush=True)
+        sys.exit(1)

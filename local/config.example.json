@@ -1,4 +1,5 @@
 {
+  "_comment": "Paths: use forward slashes (e.g. D:/Games/game.apk). Empty masterdata = skip.",
   "apk": "",
   "out": "",
   "grpc_addr": "127.0.0.1:8003",

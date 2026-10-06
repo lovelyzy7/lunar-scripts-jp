@@ -134,5 +134,6 @@ run_local.bat --reinstall-deps  :: 重装 venv 依赖
 
 流程：Java 检查 → venv 依赖 → APK 工具 → 解包 → 打补丁 →（可选）主数据 → 重建签名。
 
+- `local/config.json` 中路径建议用正斜杠（`D:/Games/game.apk`），单反斜杠会被自动修正；
 - `masterdata` 留空即跳过；有值则输出固定 `20240404193219.bin.e`（与 APK 同目录）；
 - `reuse_unpack: true` 时复用 `work/jp-final`，省去重复解包时间。
