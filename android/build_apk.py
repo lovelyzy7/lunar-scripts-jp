@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import urllib.request
+import pathlib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -67,11 +68,14 @@ def build(src, out):
         tmp.unlink()
     run([java(), "-jar", APKTOOL, "b", src, "-o", tmp])
     run([java(), "-jar", SIGNER, "-a", tmp, "-o", out.parent])
-    cand = sorted(out.parent.glob(tmp.stem + "*signed.apk"))
+    cand = [q for q in out.parent.glob(tmp.stem + "*.apk")
+            if q != tmp and q.name.lower().endswith("signed.apk")]
     if not cand:
         sys.exit("[!] 未找到签名产物，请检查上面的日志")
-    shutil.move(str(cand[-1]), out)
+    signed = max(cand, key=lambda q: q.stat().st_mtime)
+    shutil.move(str(signed), out)
     tmp.unlink(missing_ok=True)
+    pathlib.Path(str(signed) + ".idsig").unlink(missing_ok=True)
     print("[ok] 完成:", out)
 
 
