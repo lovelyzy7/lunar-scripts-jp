@@ -93,6 +93,7 @@ adb shell su -c "pm install -r -t /data/local/tmp/nier-jp-patched.apk"
 
 ```bash
 bash setup.sh          # 或 setup.bat（Windows）
+bash run_local.sh      # 一键流程（或 run_local.bat）
 source .venv/bin/activate
 ```
 
@@ -114,3 +115,24 @@ python android/build_apk.py build  work/jp-final out/JP-modded.apk
 ```
 
 需要 java（JDK 11+）。。产物签名后可直接安装。
+
+## 一键脚本（本地）
+
+```bat
+run_local.bat        :: Windows（双击或命令行）
+bash run_local.sh    :: Linux / macOS
+```
+
+首次运行会自动生成 `local/config.json`，填好 `apk`（可留空 `out`）与服务器地址后再运行：
+
+```bat
+run_local.bat
+run_local.bat --apk "D:\path\game.apk" --out "D:\path\patched.apk" --grpc 1.2.3.4:8003 --http 1.2.3.4:8080 --auth 1.2.3.4:3000
+run_local.bat --from 5          :: 跳过下载/解包，改地址后快速重打补丁
+run_local.bat --reinstall-deps  :: 重装 venv 依赖
+```
+
+流程：Java 检查 → venv 依赖 → APK 工具 → 解包 → 打补丁 →（可选）主数据 → 重建签名。
+
+- `masterdata` 留空即跳过；有值则输出固定 `20240404193219.bin.e`（与 APK 同目录）；
+- `reuse_unpack: true` 时复用 `work/jp-final`，省去重复解包时间。

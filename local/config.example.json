@@ -1,0 +1,10 @@
+{
+  "apk": "",
+  "out": "",
+  "grpc_addr": "127.0.0.1:8003",
+  "http_addr": "127.0.0.1:8080",
+  "auth_host": "127.0.0.1:3000",
+  "masterdata": "",
+  "reuse_unpack": true,
+  "reinstall_deps": false
+}

@@ -4,3 +4,4 @@ __pycache__/
 *.pyc
 *.apk
 *.idsig
+local/config.json
