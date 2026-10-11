@@ -36,13 +36,11 @@ python3 android/patch_apk_jp.py jp-work \
     --http-addr 203.0.113.10:8080 \
     --auth-host 203.0.113.10:3000
 
-# 3) 重建 + 对齐 + 签名
+# 3) 重建 + 对齐 + 签名（密钥用仓库自带 keys/nier-jp.keystore，三环境通用）
 java -jar apktool.jar b jp-work -o patched-unsigned.apk
 zipalign -p -f 4 patched-unsigned.apk patched-aligned.apk
-# 首次生成签名（可复用已有 keystore）：
-keytool -genkeypair -keystore my.keystore -alias nier -keyalg RSA -keysize 2048 -validity 10000
-apksigner sign --ks my.keystore --ks-pass pass:你的密码 --ks-key-alias nier \
-    --out nier-jp-patched.apk patched-aligned.apk
+apksigner sign --ks keys/nier-jp.keystore --ks-pass pass:lunar-jp --ks-key-alias nier \
+    --key-pass pass:lunar-jp --out nier-jp-patched.apk patched-aligned.apk
 
 # 4) 安装
 adb install -r nier-jp-patched.apk
@@ -75,6 +73,27 @@ adb shell su -c "pm install -r -t /data/local/tmp/nier-jp-patched.apk"
 | `--http-addr host:port` | 资源/CDN 地址 | — |
 | `--auth-host host:port` | 账号/引继服务器地址（可省略） | ≤ 18 字符（引继 URL 替换限制） |
 
+## 签名密钥（三条路径统一，故意入库）
+
+`keys/nier-jp.keystore` 随仓库分发（`.gitignore` 明确 `!keys/*.keystore`，push 不会被忽略），
+本地 / Colab / 手动三条签名路径**共用同一密钥**，因此各环境产出的 APK 可互相 `adb install -r` 覆盖安装。
+
+| 参数 | 值 |
+|---|---|
+| 文件 | `keys/nier-jp.keystore`（JKS，RSA 2048，有效期 10000 天） |
+| alias | `nier` |
+| store/key 密码 | `lunar-jp` |
+
+| 路径 | 签名方式 | 密钥来源 |
+|---|---|---|
+| 本地 `run_local.py` / `android/build_apk.py build` | uber-apk-signer（自动传 `--ks`） | `keys/nier-jp.keystore`（默认，可用 `--ks` 覆盖） |
+| Colab「Patch APK」单元格 | `apksigner sign --ks /content/scripts-jp/keys/nier-jp.keystore` | 同上（随仓库克隆到 Colab） |
+| README 手动四步 | `apksigner sign --ks keys/nier-jp.keystore` | 同上 |
+
+> 私钥入库是**有意为之**：目标是三环境签名一致、覆盖安装不报签名冲突，仅私服/学习用途，
+> **勿把此密钥用于其他项目**。若要换成自己的密钥：用同名同密码替换 `keys/nier-jp.keystore` 即可零改动，
+> 或同步修改 `android/build_apk.py` 常量、Colab 单元格与本节。
+
 ## 常见问题
 
 | 现象 | 原因 / 处理 |
@@ -83,6 +102,7 @@ adb shell su -c "pm install -r -t /data/local/tmp/nier-jp-patched.apk"
 | 20% 弹「通信失败」+ logcat `Curl error 35` | 客户端仍在连官方地址：确认补丁 1/2 都成功（脚本日志会打印每个补丁点） |
 | 连接端口异常（如 31） | network_config 资源端口字段错位；本脚本已按 4 字节对齐写入 |
 | 商店购买弹付款/报错 | 补丁 6 未生效；用 `--keep-iap` 之外的默认参数重跑脚本并确认 libil2cpp 补丁点 |
+| 覆盖安装报 `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | 旧包不是本密钥签的（比如老的 debug keystore 包）；卸载一次后重装，之后统一密钥即可互相覆盖 |
 | 客户端启动即闪退 | 可能是 Firebase provider 移除导致；检查 logcat，必要时回退该项（见 `patch_manifest`） |
 
 ## 文本规范（编码 / 换行符，务必遵守）

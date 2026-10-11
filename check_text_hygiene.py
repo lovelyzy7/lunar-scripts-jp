@@ -52,8 +52,9 @@ def git_tracked() -> list[tuple[str, str]]:
 def main() -> int:
     problems: list[str] = []
     checked = 0
+    entries = git_tracked()
 
-    for mode, rel in git_tracked():
+    for mode, rel in entries:
         path = ROOT / rel
         if not path.is_file():
             continue
@@ -110,6 +111,17 @@ def main() -> int:
         if ext in EXEC_CHECK_EXTS:
             if mode != "100755":
                 problems.append(f"{rel}: git 文件模式为 {mode}，*.sh 应为 100755 (chmod +x)")
+
+    # 签名密钥必须随仓库分发（本地/Colab/手动三条签名路径共用）：
+    # 确认文件存在且未被 .gitignore 忽略（push 时不能丢）
+    KEYSTORE = "keys/nier-jp.keystore"
+    tracked_paths = {rel for _, rel in entries}
+    if not (ROOT / KEYSTORE).is_file():
+        problems.append(f"{KEYSTORE}: 文件缺失 — 签名密钥必须随仓库分发")
+    elif KEYSTORE not in tracked_paths:
+        problems.append(
+            f"{KEYSTORE}: 未被 git 跟踪 — 签名密钥必须入库（push 时不能被忽略），检查 .gitignore"
+        )
 
     print(f"checked {checked} tracked text files")
     if problems:

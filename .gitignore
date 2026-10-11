@@ -5,3 +5,5 @@ __pycache__/
 *.apk
 *.idsig
 local/config.json
+# 签名密钥必须入库（本地/Colab/手动三条签名路径共用），禁止忽略
+!keys/*.keystore
