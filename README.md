@@ -85,6 +85,24 @@ adb shell su -c "pm install -r -t /data/local/tmp/nier-jp-patched.apk"
 | 商店购买弹付款/报错 | 补丁 6 未生效；用 `--keep-iap` 之外的默认参数重跑脚本并确认 libil2cpp 补丁点 |
 | 客户端启动即闪退 | 可能是 Firebase provider 移除导致；检查 logcat，必要时回退该项（见 `patch_manifest`） |
 
+## 文本规范（编码 / 换行符，务必遵守）
+
+仓库里出现过 `LF will be replaced by CRLF` 警告和 Windows 控制台乱码，规范如下，提交前自查：
+
+| 项 | 规则 |
+|---|---|
+| 编码 | 一律 **UTF-8 无 BOM**（禁止 UTF-8 BOM / UTF-16 / GBK 保存） |
+| 换行符 | 文本文件一律 **LF**；**仅 `*.bat` 用 CRLF**（符合 `.gitattributes`） |
+| 批处理 | `*.bat` **只写 ASCII**，并保留 `chcp 65001`（cmd.exe 用 OEM 代码页，UTF-8 中文会乱码） |
+| Shell | `*.sh` 保持 LF 且 `chmod +x`（git 模式 100755） |
+| Python | Windows 下打印非 ASCII 的脚本需 UTF-8 stdio（参考 `_enable_utf8_stdio()`） |
+
+```bash
+python3 check_text_hygiene.py    # 一键检查：编码 / BOM / 换行符 / 乱码风险
+```
+
+通过输出 `OK`；有问题会列出文件与原因并以非 0 退出，适合接 pre-commit / CI。
+
 ## 免责声明
 
 仅供学习与私服存档用途，请勿用于商业行为。游戏与素材版权归 SQUARE ENIX / Applibot 所有。

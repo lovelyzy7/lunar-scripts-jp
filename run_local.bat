@@ -1,4 +1,6 @@
 @echo off
+rem UTF-8 console output (prevents mojibake for non-ASCII text)
+chcp 65001 >nul
 setlocal
 cd /d "%~dp0"
 where python >nul 2>nul

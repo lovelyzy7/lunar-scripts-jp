@@ -44,6 +44,22 @@ from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad, unpad
 
 
+def _enable_utf8_stdio() -> None:
+    """Force UTF-8 stdout/stderr on Windows to avoid console/log mojibake.
+
+    Windows text-mode streams default to the legacy ANSI/OEM code page
+    (e.g. cp936), so non-ASCII output gets garbled or raises
+    UnicodeEncodeError on non-CJK systems.  No-op on POSIX.
+    """
+    if sys.platform != "win32":
+        return
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
+
 DEFAULT_INPUT = os.path.join("server", "assets", "release", "20240404193219.bin.e")
 DEFAULT_KEY = "36436230313332314545356536624265"
 DEFAULT_IV  = "45666341656634434165356536446141"
@@ -447,6 +463,8 @@ def patch_gimmick_sequence_schedules(blob):
 # --- Main ---
 
 def main():
+    _enable_utf8_stdio()
+
     parser = argparse.ArgumentParser(
         description="Patch master data timestamps to extend content to 2030."
     )

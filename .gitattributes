@@ -1,5 +1,6 @@
 # 统一换行符：仓库内文本文件一律 LF（Colab/Linux/venv 直接可用）
 # 仅 Windows 批处理保留 CRLF，二进制文件不做转换
+# 提交前用 `python3 check_text_hygiene.py` 校验编码 / 换行符 / 乱码风险
 * text=auto eol=lf
 *.bat text eol=crlf
 *.apk binary

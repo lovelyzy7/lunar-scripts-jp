@@ -1,4 +1,6 @@
 @echo off
+rem UTF-8 console output (prevents mojibake for non-ASCII text)
+chcp 65001 >nul
 rem lunar-scripts-jp environment setup (venv)
 rem Keep this file ASCII-only: cmd.exe decodes .bat with the OEM code page,
 rem so UTF-8 Chinese text would be garbled on most Windows systems.
