@@ -902,6 +902,178 @@ def patch_unity_connect(apk_dir: str) -> bool:
     return True
 
 
+
+# ==========================================================================
+#  ① auth 地址动态化：注入 com/niersp/AuthHost.smali
+#     - 读 /data/data/<PKG>/files/auth_host.txt（单行 host[:port] 或 http://host:port）
+#     - 读不到 / 为空 / 非法 / 任何异常 → 返回打包期默认值（--auth-host）
+#  ② patch_uniwebview_redirect 里那条写死的 const-string 换成 AuthHost.get()
+# ==========================================================================
+_AUTHHOST_SMALI = """.class public Lcom/niersp/AuthHost;
+.super Ljava/lang/Object;
+.source "AuthHost.java"
+
+
+# lunar-scripts-jp: 私服 auth 地址动态读取
+# 文件：/data/data/%(pkg)s/files/auth_host.txt（单行 host[:port]，可带 http:// 前缀）
+# 读不到 / 为空 / 非法 / 异常 → 返回打包期默认值 %(default)s
+.method public static get()Ljava/lang/String;
+    .locals 6
+
+    const-string v0, "/data/data/%(pkg)s/files/auth_host.txt"
+    const-string v1, "%(default)s"
+
+    const/4 v2, 0x0
+
+    :try_start
+    new-instance v3, Ljava/io/File;
+    invoke-direct {v3, v0}, Ljava/io/File;-><init>(Ljava/lang/String;)V
+
+    invoke-virtual {v3}, Ljava/io/File;->exists()Z
+    move-result v4
+
+    if-eqz v4, :io_done
+
+    new-instance v4, Ljava/io/BufferedReader;
+    new-instance v5, Ljava/io/FileReader;
+    invoke-direct {v5, v3}, Ljava/io/FileReader;-><init>(Ljava/io/File;)V
+    invoke-direct {v4, v5}, Ljava/io/BufferedReader;-><init>(Ljava/io/Reader;)V
+
+    invoke-virtual {v4}, Ljava/io/BufferedReader;->readLine()Ljava/lang/String;
+    move-result-object v2
+
+    invoke-virtual {v4}, Ljava/io/BufferedReader;->close()V
+    :try_end
+    .catch Ljava/lang/Exception; {:try_start .. :try_end} :io_done
+
+    :io_done
+    if-eqz v2, :use_default
+
+    invoke-virtual {v2}, Ljava/lang/String;->trim()Ljava/lang/String;
+    move-result-object v2
+
+    invoke-virtual {v2}, Ljava/lang/String;->length()I
+    move-result v3
+
+    if-gtz v3, :use_default
+
+    const-string v3, "http"
+    invoke-virtual {v2, v3}, Ljava/lang/String;->startsWith(Ljava/lang/String;)Z
+    move-result v3
+
+    if-eqz v3, :ret
+
+    new-instance v3, Ljava/lang/StringBuilder;
+    invoke-direct {v3}, Ljava/lang/StringBuilder;-><init>()V
+    const-string v4, "http://"
+    invoke-virtual {v3, v4}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+    invoke-virtual {v3, v2}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+    invoke-virtual {v3}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
+    move-result-object v2
+
+    :ret
+    return-object v2
+
+    :use_default
+    new-instance v3, Ljava/lang/StringBuilder;
+    invoke-direct {v3}, Ljava/lang/StringBuilder;-><init>()V
+    const-string v4, "http://"
+    invoke-virtual {v3, v4}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+    invoke-virtual {v3, v1}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+    invoke-virtual {v3}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
+    move-result-object v2
+
+    return-object v2
+.end method
+"""
+
+AUTHHOST_PKG = "com.square_enix.android_googleplay.nierspjp"
+
+
+def _find_smali_root_for_uniwebview(apk_dir: str):
+    """定位 UniWebViewDialog.smali 所在的 smali 根目录（名字以 smali 开头的那一级）"""
+    for r, _dirs, files in os.walk(apk_dir):
+        if os.path.basename(r) == "uniwebview" and "UniWebViewDialog.smali" in files:
+            d = r
+            while d and d != os.path.dirname(d):
+                if os.path.basename(d).startswith("smali"):
+                    return d
+                d = os.path.dirname(d)
+    return None
+
+
+def write_authhost_smali(apk_dir: str, auth_host: str, pkg: str = AUTHHOST_PKG) -> bool:
+    """① 注入 AuthHost.smali（放在 UniWebViewDialog 同一个 smali 根下）"""
+    root = _find_smali_root_for_uniwebview(apk_dir)
+    if root is None:
+        print("  [!] smali root not found, skip AuthHost injection")
+        return False
+    out_dir = os.path.join(root, "com", "niersp")
+    os.makedirs(out_dir, exist_ok=True)
+    out = os.path.join(out_dir, "AuthHost.smali")
+    body = _AUTHHOST_SMALI % {"pkg": pkg, "default": auth_host}
+    old = None
+    if os.path.isfile(out):
+        with open(out, encoding="utf-8") as f:
+            old = f.read()
+    if old == body:
+        print("  = AuthHost.smali already up to date")
+        return False
+    with open(out, "w", encoding="utf-8") as f:
+        f.write(body)
+    print(f"  AuthHost.smali written: {out} (default={auth_host})")
+    return True
+
+
+def patch_uniwebview_dynamic(apk_dir: str) -> bool:
+    """② 把 load() 里写死的 auth 常量替换为 AuthHost.get() 动态调用"""
+    target = None
+    for r, _dirs, files in os.walk(apk_dir):
+        if os.path.basename(r) == "uniwebview" and "UniWebViewDialog.smali" in files:
+            target = os.path.join(r, "UniWebViewDialog.smali")
+            break
+    if target is None:
+        print("  [!] UniWebViewDialog.smali not found, skip dynamic patch")
+        return False
+
+    with open(target, encoding="utf-8") as f:
+        text = f.read()
+
+    if "authhost-dynamic" in text:
+        print("  = UniWebViewDialog.load already dynamic")
+        return False
+
+    # 现有（静态）注入形如：
+    #     const-string vN, "https://psg.sqex-bridge.jp"
+    #     const-string vN+1, "http://<auth-host>"
+    #     invoke-virtual {p1, vN, vN+1}, Ljava/lang/String;->replace(...)
+    pat = re.compile(
+        r'(?P<indent>[ \t]*)const-string (?P<vnext>v\d+), "http://[^"]*"\n'
+        r'(?P<indent2>[ \t]*)invoke-virtual \{p1, (?P<vfirst>v\d+), (?P=vnext)\}'
+    )
+    m = None
+    for cand in pat.finditer(text):
+        if 'psg.sqex-bridge.jp' in text[max(0, cand.start() - 260):cand.start()]:
+            m = cand
+            break
+    if m is None:
+        print("  [!] static auth const-string not found (patch_uniwebview_redirect 未生效？)")
+        return False
+
+    repl = (
+        "%s# authhost-dynamic: 运行时读取 <files>/auth_host.txt（读不到用打包默认值）\n"
+        "%sinvoke-static {}, Lcom/niersp/AuthHost;->get()Ljava/lang/String;\n"
+        "%smove-result-object %s\n"
+        "%sinvoke-virtual {p1, %s, %s}"
+        % (m.group('indent'), m.group('indent'), m.group('indent'), m.group('vnext'),
+           m.group('indent2'), m.group('vfirst'), m.group('vnext'))
+    )
+    text = text[:m.start()] + repl + text[m.end():]
+    with open(target, "w", encoding="utf-8") as f:
+        f.write(text)
+    print("  UniWebViewDialog.load: 静态 auth 常量 -> AuthHost.get()（动态）")
+    return True
+
 def patch_uniwebview_redirect(apk_dir: str, auth_host: str) -> bool:
     """JP 引继：在 UniWebViewDialog 入口重写官方 BRIDGE 地址到私服，并支持完成标记自动关闭。
 
@@ -1064,12 +1236,18 @@ def main():
     )
     p.add_argument(
         "--auth-host",
-        help="Auth server host:port for Facebook OAuth redirect (e.g. 10.0.2.2:3000)",
+        help="Auth server host:port (默认值；动态模式下作为 fallback，例如 10.0.2.2:3000)",
+    )
+    p.add_argument(
+        "--no-auth-dynamic",
+        action="store_true",
+        help="不启用 auth 地址动态读取（默认启用：读 <files>/auth_host.txt，读不到用 --auth-host）",
     )
     args = p.parse_args()
 
     apk = args.apk_dir.rstrip("/")
     auth_host = args.auth_host
+    auth_dynamic = not args.no_auth_dynamic
 
     # Parse gRPC address into host + port.
     grpc_host, grpc_port_str = args.grpc_addr.rsplit(":", 1)
@@ -1192,6 +1370,11 @@ def main():
 
         print("\n[11] Rewriting SQUARE ENIX BRIDGE URL in UniWebViewDialog (JP transfer) ...")
         patch_uniwebview_redirect(apk, auth_host)
+
+        if auth_dynamic:
+            print("\n[12] Making auth host dynamic (reads <files>/auth_host.txt, fallback = --auth-host) ...")
+            write_authhost_smali(apk, auth_host)
+            patch_uniwebview_dynamic(apk)
 
     print(f"\n[+] Done. Rebuild and sign:")
     print(f"    apktool b {apk} -o patched-unsigned.apk")

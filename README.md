@@ -175,3 +175,29 @@ run_local.bat --reinstall-deps  :: 重装 venv 依赖
 - `local/config.json` 中路径建议用正斜杠（`D:/Games/game.apk`），单反斜杠会被自动修正；
 - `masterdata` 留空即跳过；有值则输出固定 `20240404193219.bin.e`（与 APK 同目录）；
 - `reuse_unpack: true` 时复用 `work/jp-final`，省去重复解包时间。
+
+
+---
+
+## auth 地址动态化（JP 引继，2026-10-13 新增）
+
+打补丁时会多注入一个 smali 类 `com/niersp/AuthHost`，并让 `UniWebViewDialog.load()` 用它
+**运行时读取**引继/登录用的 auth 地址（不再只用编译期常量）：
+
+| 项 | 值 |
+|---|---|
+| 文件 | `/data/data/com.square_enix.android_googleplay.nierspjp/files/auth_host.txt` |
+| 格式 | 单行 `host[:port]`（可带 `http://` 前缀），例：`192.168.2.6:3000` |
+| 读取时机 | 每次 `UniWebViewDialog.load()`（打开引继页时），不缓存 |
+| 兜底 | 文件不存在 / 为空 / 非法 / 读异常 → 用 `--auth-host` 写入的**打包期默认值** |
+| 关闭方式 | `--no-auth-dynamic`（打补丁时），或删掉该文件（运行时） |
+
+**语义**：动态化是**覆写**而不是替代 —— 不写文件就等于没打这个补丁（行为与以前完全一致）。
+
+配套：mod menu 的「服务器热切换」在应用/停止时会自动写入/删除该文件，
+因此菜单切服务器后，**API(8003)/CDN(8080)（连接层改写）+ auth(3000)（本文件）三者一起切**。
+
+实现要点（`android/patch_apk_jp.py`）：
+- `write_authhost_smali()`：注入 `AuthHost.smali`（读文件 + 校验 + 拼 `http://` + 兜底）
+- `patch_uniwebview_dynamic()`：把静态 `const-string "http://<auth-host>"` 换成 `invoke-static AuthHost.get()`
+- 幂等：已打过则跳过（标记 `authhost-dynamic`）；对旧的静态补丁可原地升级

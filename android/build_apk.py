@@ -97,7 +97,7 @@ def build(src, out, ks=None, ks_pass=None, ks_alias=None, key_pass=None):
     run([java(), "-jar", APKTOOL, "b", src, "-o", tmp])
     run([java(), "-jar", SIGNER, "-a", tmp, "-o", out.parent,
          "--ks", str(ks), "--ksPass", ks_pass,
-         "--ksAlias", ks_alias, "--keyPass", key_pass])
+         "--ksAlias", ks_alias, "--ksKeyPass", key_pass])   # 注：uber-apk-signer 的 key 密码选项是 --ksKeyPass（--keyPass 会被忽略→交互式要密码）
     cand = [q for q in out.parent.glob(tmp.stem + "*.apk")
             if q != tmp and q.name.lower().endswith("signed.apk")]
     if not cand:
