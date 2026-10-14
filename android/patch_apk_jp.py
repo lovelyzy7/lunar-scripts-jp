@@ -915,12 +915,27 @@ _AUTHHOST_SMALI = """.class public Lcom/niersp/AuthHost;
 
 
 # lunar-scripts-jp: 私服 auth 地址动态读取
-# 文件：/data/data/%(pkg)s/files/auth_host.txt（单行 host[:port]，可带 http:// 前缀）
+# 文件：/data/user/<userId>/%(pkg)s/files/auth_host.txt（单行 host[:port]，可带 http:// 前缀）
+#       userId = Process.myUid()/100000（单用户=0，即传统 /data/data 路径；双开/多用户也能定位）
 # 读不到 / 为空 / 非法 / 异常 → 返回打包期默认值 %(default)s
 .method public static get()Ljava/lang/String;
     .locals 6
 
-    const-string v0, "/data/data/%(pkg)s/files/auth_host.txt"
+    # v0 = "/data/user/<uid/100000>/%(pkg)s/files/auth_host.txt"
+    invoke-static {}, Landroid/os/Process;->myUid()I
+    move-result v0
+    const v3, 0x186a0
+    div-int/2addr v0, v3
+    new-instance v4, Ljava/lang/StringBuilder;
+    invoke-direct {v4}, Ljava/lang/StringBuilder;-><init>()V
+    const-string v5, "/data/user/"
+    invoke-virtual {v4, v5}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+    invoke-virtual {v4, v0}, Ljava/lang/StringBuilder;->append(I)Ljava/lang/StringBuilder;
+    const-string v5, "/%(pkg)s/files/auth_host.txt"
+    invoke-virtual {v4, v5}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+    invoke-virtual {v4}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
+    move-result-object v0
+
     const-string v1, "%(default)s"
 
     const/4 v2, 0x0
@@ -955,13 +970,18 @@ _AUTHHOST_SMALI = """.class public Lcom/niersp/AuthHost;
     invoke-virtual {v2}, Ljava/lang/String;->length()I
     move-result v3
 
-    if-gtz v3, :use_default
+    # 注意：必须 if-eqz（长度==0 才走默认）。if-gtz/if-nez 是「>0 / !=0 就跳转」，
+    # 写反会导致文件值永远不生效（2026-10-14 真机确认并修复）
+    if-eqz v3, :use_default
 
     const-string v3, "http"
     invoke-virtual {v2, v3}, Ljava/lang/String;->startsWith(Ljava/lang/String;)Z
     move-result v3
 
-    if-eqz v3, :ret
+    # 已带 http 前缀 → 直接返回；否则下面拼 http://
+    # 注意：必须 if-nez（startsWith 返回 true=非 0 才跳转）。写反成 if-eqz
+    # 会把不带 http 的值原样返回（2026-10-14 实测发现并修复）
+    if-nez v3, :ret
 
     new-instance v3, Ljava/lang/StringBuilder;
     invoke-direct {v3}, Ljava/lang/StringBuilder;-><init>()V
