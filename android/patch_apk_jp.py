@@ -1045,8 +1045,16 @@ def write_authhost_smali(apk_dir: str, auth_host: str, pkg: str = AUTHHOST_PKG) 
     return True
 
 
-def patch_uniwebview_dynamic(apk_dir: str) -> bool:
-    """② 把 load() 里写死的 auth 常量替换为 AuthHost.get() 动态调用"""
+def patch_uniwebview_dynamic(apk_dir: str, auth_host: str = "") -> bool:
+    """② 把 load() 里写死的 auth 常量全部替换为 AuthHost.get() 动态调用
+
+    三处来源都要动态化（2026-10-15 真机确认）：
+      a) https://psg.sqex-bridge.jp  — 官方 bridge URL（https 形式）
+      b) http://psg.sqex-bridge.jp   — 官方 bridge URL（http 形式）
+      c) http://<打包默认 auth>      — C# 侧 global-metadata.dat 里已改写的完整
+                                       /ntv/{gameId}/... URL（不含 psg.sqex-bridge.jp；
+                                       只改 a/b 时引继流程仍连旧地址）
+    """
     target = None
     for r, _dirs, files in os.walk(apk_dir):
         if os.path.basename(r) == "uniwebview" and "UniWebViewDialog.smali" in files:
@@ -1059,10 +1067,9 @@ def patch_uniwebview_dynamic(apk_dir: str) -> bool:
     with open(target, encoding="utf-8") as f:
         text = f.read()
 
-    if "authhost-dynamic" in text:
-        print("  = UniWebViewDialog.load already dynamic")
-        return False
+    changed = False
 
+    # ---- a/b：官方 bridge 两处静态常量 ----
     # 现有（静态）注入形如：
     #     const-string vN, "https://psg.sqex-bridge.jp"
     #     const-string vN+1, "http://<auth-host>"
@@ -1071,27 +1078,69 @@ def patch_uniwebview_dynamic(apk_dir: str) -> bool:
         r'(?P<indent>[ \t]*)const-string (?P<vnext>v\d+), "http://[^"]*"\n'
         r'(?P<indent2>[ \t]*)invoke-virtual \{p1, (?P<vfirst>v\d+), (?P=vnext)\}'
     )
-    m = None
+    matches = []
     for cand in pat.finditer(text):
-        if 'psg.sqex-bridge.jp' in text[max(0, cand.start() - 260):cand.start()]:
-            m = cand
-            break
-    if m is None:
+        if 'psg.sqex-bridge.jp' not in text[max(0, cand.start() - 320):cand.start()]:
+            continue
+        # 已是动态（AuthHost.get()）的跳过，保证幂等
+        if 'AuthHost;->get()' in text[max(0, cand.start() - 200):cand.start()]:
+            continue
+        matches.append(cand)
+
+    if matches:
+        # 逆序替换，避免偏移失效
+        for m in reversed(matches):
+            repl = (
+                "%s# authhost-dynamic: 运行时读取 <files>/auth_host.txt（读不到用打包默认值）\n"
+                "%sinvoke-static {}, Lcom/niersp/AuthHost;->get()Ljava/lang/String;\n"
+                "%smove-result-object %s\n"
+                "%sinvoke-virtual {p1, %s, %s}"
+                % (m.group('indent'), m.group('indent'), m.group('indent'), m.group('vnext'),
+                   m.group('indent2'), m.group('vfirst'), m.group('vnext'))
+            )
+            text = text[:m.start()] + repl + text[m.end():]
+        changed = True
+        print("  UniWebViewDialog.load: %d 处静态 bridge 常量 -> AuthHost.get()（动态）" % len(matches))
+    elif "authhost-dynamic" not in text:
         print("  [!] static auth const-string not found (patch_uniwebview_redirect 未生效？)")
+
+    # ---- c：打包默认 auth 前缀（C# metadata 里的 /ntv URL 不带 psg.sqex-bridge.jp）----
+    marker = "# authhost-dynamic-default:"
+    if auth_host:
+        if marker in text:
+            print("  = UniWebViewDialog.load 已含打包默认动态化")
+        else:
+            m2 = re.search(
+                r'(?P<i1>[ \t]*)const-string (?P<v1>v\d+), "http://psg\.sqex-bridge\.jp"\n'
+                r'(?P<i2>[ \t]*)# authhost-dynamic[^\n]*\n'
+                r'(?P<i3>[ \t]*)invoke-static \{\}, Lcom/niersp/AuthHost;->get\(\)Ljava/lang/String;\n'
+                r'(?P<i4>[ \t]*)move-result-object (?P<v2>v\d+)\n'
+                r'(?P<i5>[ \t]*)invoke-virtual \{p1, (?P=v1), (?P=v2)\}[^\n]*\n'
+                r'(?P<i6>[ \t]*)move-result-object p1\n',
+                text)
+            if m2 is None:
+                print("  [!] 未找到 http://psg.sqex-bridge.jp 动态块，跳过打包默认动态化")
+            else:
+                i1, v1, v2 = m2.group('i1'), m2.group('v1'), m2.group('v2')
+                block = (
+                    '%sconst-string %s, "http://%s"\n'
+                    '%s%s 打包默认 auth 前缀 -> 运行时地址（C# metadata /ntv URL）\n'
+                    '%sinvoke-static {}, Lcom/niersp/AuthHost;->get()Ljava/lang/String;\n'
+                    '%smove-result-object %s\n'
+                    '%sinvoke-virtual {p1, %s, %s}, Ljava/lang/String;->replace(Ljava/lang/CharSequence;Ljava/lang/CharSequence;)Ljava/lang/String;\n'
+                    '%smove-result-object p1\n'
+                    % (i1, v1, auth_host, i1, marker, i1, i1, v2, i1, v1, v2, i1)
+                )
+                text = text[:m2.end()] + block + text[m2.end():]
+                changed = True
+                print("  UniWebViewDialog.load: 打包默认 http://%s -> AuthHost.get()（动态）" % auth_host)
+
+    if not changed:
+        print("  = UniWebViewDialog.load 无需修改")
         return False
 
-    repl = (
-        "%s# authhost-dynamic: 运行时读取 <files>/auth_host.txt（读不到用打包默认值）\n"
-        "%sinvoke-static {}, Lcom/niersp/AuthHost;->get()Ljava/lang/String;\n"
-        "%smove-result-object %s\n"
-        "%sinvoke-virtual {p1, %s, %s}"
-        % (m.group('indent'), m.group('indent'), m.group('indent'), m.group('vnext'),
-           m.group('indent2'), m.group('vfirst'), m.group('vnext'))
-    )
-    text = text[:m.start()] + repl + text[m.end():]
     with open(target, "w", encoding="utf-8") as f:
         f.write(text)
-    print("  UniWebViewDialog.load: 静态 auth 常量 -> AuthHost.get()（动态）")
     return True
 
 def patch_uniwebview_redirect(apk_dir: str, auth_host: str) -> bool:
@@ -1394,7 +1443,7 @@ def main():
         if auth_dynamic:
             print("\n[12] Making auth host dynamic (reads <files>/auth_host.txt, fallback = --auth-host) ...")
             write_authhost_smali(apk, auth_host)
-            patch_uniwebview_dynamic(apk)
+            patch_uniwebview_dynamic(apk, auth_host)
 
     print(f"\n[+] Done. Rebuild and sign:")
     print(f"    apktool b {apk} -o patched-unsigned.apk")
