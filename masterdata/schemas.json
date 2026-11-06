@@ -259,6 +259,21 @@
       ]
     ]
   },
+  "m_abiliwy": {
+    "class": "EntityMAbility",
+    "columns": [
+      [
+        0,
+        "int",
+        "AbilityId"
+      ],
+      [
+        1,
+        "int",
+        "AbilityLevelGroupId"
+      ]
+    ]
+  },
   "m_actor": {
     "class": "EntityMActor",
     "columns": [

@@ -34,6 +34,7 @@ Usage examples:
 
 import argparse
 import os
+import re
 import struct
 import sys
 from datetime import datetime, timezone
@@ -60,9 +61,45 @@ def _enable_utf8_stdio() -> None:
             pass
 
 
-DEFAULT_INPUT = os.path.join("server", "assets", "release", "20240404193219.bin.e")
 DEFAULT_KEY = "36436230313332314545356536624265"
 DEFAULT_IV  = "45666341656634434165356536446141"
+
+# Known final master-data builds per region (filename -> region label).
+REGION_FILENAMES = {
+    "20240404193219.bin.e": "GL",
+    "20240405123139.bin.e": "JP",
+}
+
+# Default-input candidates in resolution order (GL first, then JP).
+DEFAULT_INPUT_CANDIDATES = [
+    os.path.join("server", "assets", "release", "20240404193219.bin.e"),
+    os.path.join("server", "assets", "release", "20240405123139.bin.e"),
+]
+
+
+def detect_region(path):
+    """Best-effort GL/JP region detection from the master-data filename.
+
+    Recognises the known final build names, then falls back to delimited
+    JP/GL tokens in the file name (e.g. JP_20240405123139.bin.e).
+    """
+    name = os.path.basename(path)
+    if name in REGION_FILENAMES:
+        return REGION_FILENAMES[name]
+    tokens = [t for t in re.split(r"[^A-Za-z0-9]+", name.upper()) if t]
+    if "JP" in tokens:
+        return "JP"
+    if "GL" in tokens:
+        return "GL"
+    return "UNKNOWN"
+
+
+def resolve_default_input():
+    """Pick the default input: the first existing candidate (GL, then JP)."""
+    for cand in DEFAULT_INPUT_CANDIDATES:
+        if os.path.exists(cand):
+            return cand
+    return DEFAULT_INPUT_CANDIDATES[0]
 
 # --- Timestamp patching constants ---
 
@@ -479,14 +516,21 @@ def main():
                           help=f"AES IV as hex string (default: built-in)")
     iv_group.add_argument("--iv-file", help="Path to raw IV file (16 bytes)")
 
-    parser.add_argument("--input", default=DEFAULT_INPUT,
-                        help=f"Input .bin.e file (default: {DEFAULT_INPUT})")
+    parser.add_argument("--input", default=None,
+                        help="Input .bin.e file (default: auto-select "
+                             "server/assets/release/20240404193219.bin.e (GL) "
+                             "or 20240405123139.bin.e (JP) when present)")
     parser.add_argument("--output",
                         help="Output .bin.e file (default: overwrite input)")
     parser.add_argument("--dry-run", action="store_true",
                         help="Decrypt and patch but don't write output")
 
     args = parser.parse_args()
+
+    if args.input is None:
+        args.input = resolve_default_input()
+        print(f"Input (auto-selected): {args.input}")
+    print(f"Region: {detect_region(args.input)} (from filename {os.path.basename(args.input)})")
 
     # Load key
     if args.key_file:
@@ -554,19 +598,23 @@ def main():
         blob = data_blob[offset:offset + length]
 
         ext = msgpack.unpackb(blob, raw=True)
-        if not isinstance(ext, msgpack.ExtType) or ext.code != 99:
-            print(f"  WARNING: {tname} is not LZ4-compressed (ExtType 99), skipping")
-            continue
-
-        uncompressed_len, lz4_data = read_lz4_ext_header(ext.data)
-        decompressed = bytearray(lz4.block.decompress(lz4_data, uncompressed_size=uncompressed_len))
+        compressed = isinstance(ext, msgpack.ExtType) and ext.code == 99
+        if compressed:
+            uncompressed_len, lz4_data = read_lz4_ext_header(ext.data)
+            decompressed = bytearray(lz4.block.decompress(lz4_data, uncompressed_size=uncompressed_len))
+        else:
+            # Small/empty tables are stored as plain msgpack arrays without the
+            # LZ4 ExtType(99) wrapper (seen in both GL and JP builds); patch
+            # them as-is instead of skipping.
+            decompressed = bytearray(blob)
 
         col_indices = {idx for idx, _ in columns}
         row_filter = TABLE_PATCH_FILTERS.get(tname)
         count, skip_count = patch_table_blob(decompressed, col_indices, row_filter)
 
         if count > 0:
-            new_blobs[tname] = build_lz4_ext_blob(bytes(decompressed))
+            new_blobs[tname] = (build_lz4_ext_blob(bytes(decompressed))
+                                if compressed else bytes(decompressed))
             stats[tname] = (count, skip_count)
             total_patched += count
 

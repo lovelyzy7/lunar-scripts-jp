@@ -1,12 +1,26 @@
 #!/usr/bin/env python3
 """
 Extract master data tables from full binary dump.
-Usage: python extract_master_data.py <master_data_full.bin> <output_dir>
+
+Accepts either a decrypted master-data binary (master_data_full.bin) or an
+encrypted .bin.e build (decrypted automatically with the built-in key/IV,
+GL 20240404193219 and JP 20240405123139 alike).
+
+Usage:
+  python extract_master_data.py <master_data_full.bin> <output_dir>
+  python extract_master_data.py <20240405123139.bin.e> <output_dir>
+  python extract_master_data.py <file.bin.e> <output_dir> --key-file k.bin --iv-file v.bin
 """
 
+import argparse
 import sys
 import os
 import msgpack
+
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import unpad
+
+from patch_masterdata import DEFAULT_IV, DEFAULT_KEY, detect_region
 
 
 def read_msgpack_element_size(data, offset):
@@ -228,12 +242,24 @@ def read_msgpack_string(data, offset):
     return None
 
 
-def extract_tables(input_file, output_dir):
+def load_master_bytes(input_file, key, iv, force_raw=False):
+    """Read the master-data bytes, decrypting .bin.e inputs automatically."""
+    with open(input_file, 'rb') as f:
+        data = f.read()
+    if force_raw or not input_file.endswith('.e'):
+        return data
+    print(f"Decrypting {os.path.basename(input_file)} (AES-{len(key) * 8}-CBC)...")
+    data = unpad(AES.new(key, AES.MODE_CBC, iv).decrypt(data), AES.block_size)
+    print(f"  Decrypted size: {len(data)} bytes")
+    return data
+
+
+def extract_tables(input_file, output_dir, key=None, iv=None, force_raw=False):
     """Extract tables from master data file."""
     os.makedirs(output_dir, exist_ok=True)
 
-    with open(input_file, 'rb') as f:
-        data = f.read()
+    data = load_master_bytes(input_file, key or bytes.fromhex(DEFAULT_KEY),
+                             iv or bytes.fromhex(DEFAULT_IV), force_raw)
 
     print(f"Loaded {len(data)} bytes")
 
@@ -306,15 +332,25 @@ def extract_tables(input_file, output_dir):
 
 
 if __name__ == '__main__':
-    if len(sys.argv) != 3:
-        print(f"Usage: {sys.argv[0]} <master_data_full.bin> <output_dir>")
+    parser = argparse.ArgumentParser(
+        description="Extract master data tables from a full binary dump (.bin or .bin.e)."
+    )
+    parser.add_argument("input", help="master_data_full.bin or encrypted .bin.e")
+    parser.add_argument("output", help="output directory for per-table .msgpack files")
+    parser.add_argument("--key", default=DEFAULT_KEY, help="AES key as hex string (default: built-in)")
+    parser.add_argument("--iv", default=DEFAULT_IV, help="AES IV as hex string (default: built-in)")
+    parser.add_argument("--key-file", help="Path to raw key file (16 or 32 bytes)")
+    parser.add_argument("--iv-file", help="Path to raw IV file (16 bytes)")
+    parser.add_argument("--raw", action="store_true",
+                        help="treat input as already-decrypted even if it ends in .e")
+    args = parser.parse_args()
+
+    if not os.path.exists(args.input):
+        print(f"Input file not found: {args.input}")
         sys.exit(1)
 
-    input_file = sys.argv[1]
-    output_dir = sys.argv[2]
+    key = open(args.key_file, 'rb').read() if args.key_file else bytes.fromhex(args.key)
+    iv = open(args.iv_file, 'rb').read() if args.iv_file else bytes.fromhex(args.iv)
 
-    if not os.path.exists(input_file):
-        print(f"Input file not found: {input_file}")
-        sys.exit(1)
-
-    extract_tables(input_file, output_dir)
+    print(f"Region: {detect_region(args.input)} (from filename {os.path.basename(args.input)})")
+    extract_tables(args.input, args.output, key, iv, args.raw)

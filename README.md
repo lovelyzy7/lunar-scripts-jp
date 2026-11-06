@@ -13,7 +13,7 @@
 |---|---|
 | `android/patch_apk_jp.py` | 主补丁脚本（解包目录 → 已补丁） |
 | `assetbundles/` | asset bundle 解密/加密、`list.bin` 处理（与上游一致） |
-| `masterdata/` | 主数据提取 / 打补丁 / 导出（与上游一致） |
+| `masterdata/` | 主数据提取 / 打补丁 / 导出（GL/JP 双版本，按文件名自动识别，见「主数据工具链」） |
 | ~~`tools/`~~ | **Frida 诊断脚本已移出仓库** → `jp/tools-jp-frida/`（仅排查用，构建/游玩不需要） |
 | `docs/` | 搭建记录、更新方案 |
 
@@ -176,6 +176,53 @@ run_local.bat --reinstall-deps  :: 重装 venv 依赖
 - `masterdata` 留空即跳过；有值则输出固定 `20240404193219.bin.e`（与 APK 同目录）；
 - `reuse_unpack: true` 时复用 `work/jp-final`，省去重复解包时间。
 
+
+---
+
+## 主数据工具链（masterdata/，GL 与 JP 双版本）
+
+四个工具对 **GL（`20240404193219.bin.e`）与 JP（`20240405123139.bin.e`）** 同时适用：
+
+| 工具 | 用途 | 用法 |
+|---|---|---|
+| `dump_masterdata.py` | `.bin.e` → 每表 JSON（具名列） | `python dump_masterdata.py [--input FILE] [--output DIR]` |
+| `patch_masterdata.py` | EndDatetime 延期至 2030、活动排期修正、回写 `.bin.e` | `python patch_masterdata.py [--input FILE] [--output FILE] [--dry-run]` |
+| `extract_master_data.py` | `.bin.e` / 解密 bin → 每表 `.msgpack` | `python extract_master_data.py <in> <outdir>` |
+| `msgpack_to_json.py` | `.msgpack` 目录 → JSON（自动解 LZ4 ExtType99） | `python msgpack_to_json.py <indir> <outdir>` |
+
+**GL/JP 自动识别**：`--input` 不填时按顺序自动选取
+`server/assets/release/20240404193219.bin.e`（GL）→ `20240405123139.bin.e`（JP）；
+两者都会打印 `Region: GL|JP (from filename …)`，判定规则为已知文件名 → 文件名中的独立 `JP`/`GL` 词元。
+
+### GL / JP 差异（20240404193219 vs 20240405123139 实测）
+
+| 维度 | 结论 | 工具处理 |
+|---|---|---|
+| 表集合 | 两服均 607 张，逐名一致 | — |
+| 列结构 | 所有行列数与 `schemas.json` 完全吻合（0 处偏差），补丁列位一致 | 复用同一套 schema 与 `PATCH_COLUMNS` |
+| schema 拼写 | 数据里是 `m_abiliwy`，schema 原条目为 `m_ability`（两服皆然） | `schemas.json` 已增补 `m_abiliwy` 别名（607→608 条），dump 输出 `EntityMAbilityTable.json` |
+| 行数 | 72 张表行数不同（内容差异：JP 的 `m_dokan_text` 1300 行 vs GL 3684 行、collection_bonus 系列 0 行等） | 按行遍历，天然兼容 |
+| 存储形态 | 小/空表不套 LZ4 壳（GL 3 张、JP 4 张，均为明文 msgpack 数组） | `patch_masterdata.py` 已容错明文数组（原逻辑会跳过，顺带修复了 GL 侧同问题） |
+| 加密 | 同一对 AES-128-CBC key/IV | — |
+
+### JP 验证结果（`_work/` 实测）
+
+- `dump`：607 表，0 无 schema，0 失败；`extract` + `msgpack_to_json`：607 → 607 全部转换成功
+- `patch`：**8,956 处延期（29 表）**、`m_maintenance` 清空、`m_event_quest_unlock_condition` +1 行、
+  gimmick 排期 1271 条去重、迷宫季节 39 行开窗；输出可再次 dump，**round-trip 一致**（607→607，
+  32 张表的差异全部为预期补丁，0 处意外）
+- lunar-tear 加载：`LUNAR_MASTERDATA=<patched.bin.e>` 启动打印 `master data loaded (607 tables)`，
+  且 `consumable item catalog: 794 items` 为 JP 值（GL 为 832），确认读取的是 JP 数据
+
+用 lunar-tear 验证加载（示例，端口避开现网）：
+
+```powershell
+$env:LUNAR_MASTERDATA = '<patched JP .bin.e>'
+.\lunar-tear.exe --listen 127.0.0.1:8014 --public-addr 127.0.0.1:8014 `
+    --octo-url http://127.0.0.1:18080 --db <独立 game.db 副本>
+```
+
+详细差异分析与验证记录见 `docs/JP主数据适配.md`。
 
 ---
 

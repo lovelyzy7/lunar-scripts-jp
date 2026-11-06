@@ -22,6 +22,7 @@ Usage:
 import argparse
 import json
 import os
+import re
 import struct
 import sys
 
@@ -31,8 +32,44 @@ from Crypto.Cipher import AES
 from Crypto.Util.Padding import unpad
 
 
-DEFAULT_INPUT = os.path.join("server", "assets", "release", "20240404193219.bin.e")
 DEFAULT_OUTPUT = "master_data"
+
+# Known final master-data builds per region (filename -> region label).
+REGION_FILENAMES = {
+    "20240404193219.bin.e": "GL",
+    "20240405123139.bin.e": "JP",
+}
+
+# Default-input candidates in resolution order (GL first, then JP).
+DEFAULT_INPUT_CANDIDATES = [
+    os.path.join("server", "assets", "release", "20240404193219.bin.e"),
+    os.path.join("server", "assets", "release", "20240405123139.bin.e"),
+]
+
+
+def detect_region(path):
+    """Best-effort GL/JP region detection from the master-data filename.
+
+    Recognises the known final build names, then falls back to delimited
+    JP/GL tokens in the file name (e.g. JP_20240405123139.bin.e).
+    """
+    name = os.path.basename(path)
+    if name in REGION_FILENAMES:
+        return REGION_FILENAMES[name]
+    tokens = [t for t in re.split(r"[^A-Za-z0-9]+", name.upper()) if t]
+    if "JP" in tokens:
+        return "JP"
+    if "GL" in tokens:
+        return "GL"
+    return "UNKNOWN"
+
+
+def resolve_default_input():
+    """Pick the default input: the first existing candidate (GL, then JP)."""
+    for cand in DEFAULT_INPUT_CANDIDATES:
+        if os.path.exists(cand):
+            return cand
+    return DEFAULT_INPUT_CANDIDATES[0]
 DEFAULT_KEY = "36436230313332314545356536624265"
 DEFAULT_IV  = "45666341656634434165356536446141"
 
@@ -112,12 +149,19 @@ def main():
                           help="AES IV as hex string (default: built-in)")
     iv_group.add_argument("--iv-file", help="Path to raw IV file (16 bytes)")
 
-    parser.add_argument("--input", default=DEFAULT_INPUT,
-                        help=f"Input .bin.e file (default: {DEFAULT_INPUT})")
+    parser.add_argument("--input", default=None,
+                        help="Input .bin.e file (default: auto-select "
+                             "server/assets/release/20240404193219.bin.e (GL) "
+                             "or 20240405123139.bin.e (JP) when present)")
     parser.add_argument("--output", default=DEFAULT_OUTPUT,
                         help=f"Output directory (default: {DEFAULT_OUTPUT})")
 
     args = parser.parse_args()
+
+    if args.input is None:
+        args.input = resolve_default_input()
+        print(f"Input (auto-selected): {args.input}")
+    print(f"Region: {detect_region(args.input)} (from filename {os.path.basename(args.input)})")
 
     # Load key
     if args.key_file:
